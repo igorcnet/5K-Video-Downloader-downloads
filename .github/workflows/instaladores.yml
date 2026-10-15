@@ -111,10 +111,28 @@ jobs:
           $log = "$env:APPDATA\5K Video Downloader\registro.log"
           if (Test-Path $log) { Get-Content $log }
           "Janela: '$($app.MainWindowTitle)'"
-          if ($app.HasExited) { throw 'O programa fechou sozinho' }
+          if ($app.HasExited) {
+            "Código de saída: $($app.ExitCode)"
+            $wv2 = 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+            "WebView2: HKLM=$((Get-ItemProperty "HKLM:\$wv2" -ErrorAction SilentlyContinue).pv) HKCU=$((Get-ItemProperty "HKCU:\$($wv2 -replace 'WOW6432Node\\', '')" -ErrorAction SilentlyContinue).pv)"
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 2; StartTime = (Get-Date).AddMinutes(-3) } -ErrorAction SilentlyContinue |
+              Select-Object -First 5 | Format-List TimeCreated, ProviderName, Message
+            throw 'O programa fechou sozinho'
+          }
           if (-not (Select-String -Path $log -Pattern 'aberto .*JavaScript: deno' -Quiet)) { throw 'O programa não abriu direito' }
           if (Select-String -Path $log -Pattern 'Traceback|erro interno' -Quiet) { throw 'Erro no registro' }
           Stop-Process -Id $app.Id -Force
+
+      - name: Diagnóstico (roda pelo código, com as mensagens na tela)
+        if: failure()
+        shell: pwsh
+        run: |
+          $p = Start-Process python -ArgumentList 'app.py' -RedirectStandardOutput saida.txt -RedirectStandardError erros.txt -PassThru
+          Start-Sleep 30
+          $p.Refresh()
+          "Encerrado: $($p.HasExited)  Código: $(if ($p.HasExited) { $p.ExitCode })"
+          Get-Content saida.txt, erros.txt -ErrorAction SilentlyContinue
+          if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
 
       - uses: actions/upload-artifact@v7
         with:
@@ -196,7 +214,7 @@ jobs:
 
   linux:
     needs: conferir
-    runs-on: ubuntu-22.04              # o mais antigo: o .deb roda do Ubuntu 22.04 / Mint 21 em diante
+    runs-on: ubuntu-22.04              # o mais antigo: o .deb roda do Ubuntu 22.04 / Mint 21 / Debian 12 em diante
     steps:
       - uses: actions/checkout@v7
         with:
@@ -208,7 +226,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Compilar (PyInstaller, janela em Qt)
+      - name: Bibliotecas para compilar o PyGObject
+        run: sudo apt-get update -q && sudo apt-get install -y -q libgirepository1.0-dev libcairo2-dev pkg-config
+
+      - name: Compilar (PyInstaller; GTK, WebKitGTK e ffmpeg ficam no sistema)
         run: python empacotar.py
 
       - name: Instalador .deb
@@ -240,8 +261,10 @@ jobs:
       - name: Testar (instala o .deb e abre o programa)
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends xvfb x11-utils imagemagick ./5K-Video-Downloader-Linux.deb
-          desktop-file-validate /usr/share/applications/5k-video-downloader.desktop || true
+          sudo apt-get install -y -q --no-install-recommends xvfb x11-utils imagemagick desktop-file-utils \
+            ./5K-Video-Downloader-Linux.deb
+          desktop-file-validate /usr/share/applications/5k-video-downloader.desktop
+          du -sh /opt/5k-video-downloader
           cat > teste.sh <<'FIM'
           5k-video-downloader > programa.log 2>&1 &
           PID=$!
