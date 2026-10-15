@@ -40,7 +40,18 @@ jobs:
         with:
           gradle-version: '8.14.6'
 
+      - name: Chave fixa de assinatura (se houver, os APKs de teste instalam por cima uns dos outros)
+        env:
+          CHAVE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -n "$CHAVE" ]; then
+            printf '%s' "$CHAVE" | base64 -d > "$RUNNER_TEMP/android-5k.p12"
+            echo "ANDROID_KEYSTORE=$RUNNER_TEMP/android-5k.p12" >> "$GITHUB_ENV"
+          fi
+
       - name: Compilar os APKs (debug)
+        env:
+          ANDROID_KEYSTORE_SENHA: ${{ secrets.ANDROID_KEYSTORE_SENHA }}
         run: |
           gradle -p android assembleDebug --no-daemon
           mkdir -p apks

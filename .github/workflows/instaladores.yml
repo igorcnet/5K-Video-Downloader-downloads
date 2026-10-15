@@ -12,6 +12,7 @@
 #   .../releases/latest/download/5K-Video-Downloader-macOS.dmg         (Mac M1 em diante)
 #   .../releases/latest/download/5K-Video-Downloader-macOS-Intel.dmg
 #   .../releases/latest/download/5K-Video-Downloader-Linux.deb          (Ubuntu, Mint, Debian)
+#   .../releases/latest/download/5K-Video-Downloader-Android.apk        (Android 7+, 64 bits)
 # Com publicar=false só compila e testa; os arquivos ficam por 2 dias em "Artifacts", na página da execução.
 #
 # Assinatura: depois que este workflow publica, o ./lancar-versao.sh assina a Release no computador de quem
@@ -294,9 +295,67 @@ jobs:
           if-no-files-found: ignore
           retention-days: 2
 
+  android:
+    needs: conferir
+    runs-on: ubuntu-latest
+    env:
+      # Impressão digital (SHA-256) do certificado da chave fixa do app: o APK publicado tem de ser assinado por ela
+      CERTIFICADO_ANDROID: '2C:DF:6D:1D:1A:59:DF:7D:26:9F:76:2A:B2:5A:44:D6:04:95:5E:D1:4E:44:E5:13:AF:D1:71:A7:5F:73:0F:35'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.CODIGO }}
+          ref: ${{ inputs.versao }}
+          token: ${{ secrets.CODIGO_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0 (o Chaquopy usa para instalar os pacotes do app)
+        with:
+          python-version: '3.12'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          gradle-version: '8.14.6'
+
+      - name: Chave fixa de assinatura
+        env:
+          CHAVE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -z "$CHAVE" ]; then
+            echo "::error::Falta o secret ANDROID_KEYSTORE (a chave fixa do app Android)."
+            exit 1
+          fi
+          printf '%s' "$CHAVE" | base64 -d > "$RUNNER_TEMP/android-5k.p12"
+          echo "ANDROID_KEYSTORE=$RUNNER_TEMP/android-5k.p12" >> "$GITHUB_ENV"
+
+      - name: APK (arm64, assinado com a chave fixa)
+        env:
+          ANDROID_KEYSTORE_SENHA: ${{ secrets.ANDROID_KEYSTORE_SENHA }}
+        run: |
+          gradle -p android assembleArm64Release --no-daemon
+          mkdir -p dist
+          cp android/app/build/outputs/apk/arm64/release/app-arm64-release.apk dist/5K-Video-Downloader-Android.apk
+          ASSINADOR=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$ASSINADOR" verify --print-certs dist/5K-Video-Downloader-Android.apk | tee certificado.txt
+          ASSINATURA=$(grep -m1 "SHA-256 digest" certificado.txt | awk '{print $NF}' | tr a-f A-F | sed 's/../&:/g; s/:$//')
+          if [ "$ASSINATURA" != "$CERTIFICADO_ANDROID" ]; then
+            echo "::error::O APK não foi assinado pela chave fixa do app ($ASSINATURA)."
+            exit 1
+          fi
+          ls -l dist/5K-Video-Downloader-Android.apk
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: 5K-Video-Downloader-Android.apk
+          path: dist/5K-Video-Downloader-Android.apk
+          if-no-files-found: error
+          retention-days: 2
+
   publicar:
     if: inputs.publicar
-    needs: [windows, macos, linux, linux-teste]
+    needs: [windows, macos, linux, linux-teste, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -324,11 +383,13 @@ jobs:
           - **Mac com chip Apple (M1 em diante)**: `5K-Video-Downloader-macOS.dmg`
           - **Mac com processador Intel**: `5K-Video-Downloader-macOS-Intel.dmg`
           - **Linux (Ubuntu 22.04+, Linux Mint 21+, Debian 12+)**: `5K-Video-Downloader-Linux.deb`
+          - **Android 7 ou mais novo (celulares de 64 bits)**: `5K-Video-Downloader-Android.apk`
 
           O programa ainda não tem assinatura digital, por isso o sistema avisa na primeira vez:
 
           - **Windows**: na tela "O Windows protegeu o computador", clique em **Mais informações** e depois em **Executar assim mesmo**.
           - **Linux**: abra o .deb com dois cliques (Instalador de pacotes) ou rode `sudo apt install ./5K-Video-Downloader-Linux.deb`. O programa aparece no menu de aplicativos.
+          - **Android**: abra o arquivo baixado; o celular pede para **permitir instalar apps desta fonte** (do navegador ou do app de arquivos). Se o Play Protect avisar, toque em **Mais detalhes → Instalar mesmo assim**.
           - **macOS**: arraste o 5K Video Downloader para Aplicativos e abra. Se o Mac disser que não pode abrir, vá em **Ajustes do Sistema → Privacidade e Segurança** e clique em **Abrir Mesmo Assim** (no macOS 14 ou anterior: botão direito no app → **Abrir**).
 
           Os arquivos `manifesto.json` e `manifesto.json.sig` são a assinatura dos instaladores: o programa confere sozinho antes de se atualizar. Não precisa baixá-los.
