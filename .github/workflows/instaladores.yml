@@ -87,7 +87,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Compilar (PyInstaller)
+      - name: Compilar (PyInstaller, com o bootloader compilado aqui)
+        env:
+          # O bootloader pronto do PyInstaller é idêntico em milhares de programas e o Windows Defender o confunde
+          # com vírus (detecção "!ml"); compilado aqui com o MSVC do runner, o executável fica só nosso.
+          PYINSTALLER_COMPILE_BOOTLOADER: '1'
         run: python empacotar.py
 
       - name: Instalador (Inno Setup)
@@ -129,6 +133,20 @@ jobs:
           if (-not (Select-String -Path $log -Pattern 'aberto .*JavaScript: deno' -Quiet)) { throw 'O programa não abriu direito' }
           if (Select-String -Path $log -Pattern 'Traceback|erro interno' -Quiet) { throw 'Erro no registro' }
           Stop-Process -Id $app.Id -Force
+
+      - name: Windows Defender (o instalador e o programa instalado não podem ser acusados)
+        shell: pwsh
+        run: |
+          $mp = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe"
+          if (-not (Test-Path $mp)) { 'Windows Defender não está neste runner'; exit 0 }
+          & $mp -SignatureUpdate | Select-Object -Last 2
+          Get-MpComputerStatus -ErrorAction SilentlyContinue | Format-List AntivirusSignatureVersion, AntivirusSignatureLastUpdated
+          $pasta = "$env:LOCALAPPDATA\Programs\5K Video Downloader"
+          foreach ($alvo in @((Resolve-Path dist\5K-Video-Downloader-Windows.exe).Path, $pasta)) {
+            & $mp -Scan -ScanType 3 -File $alvo -DisableRemediation | Select-Object -Last 4
+            if ($LASTEXITCODE -eq 2) { throw "O Windows Defender acusou: $alvo" }
+            "OK ($LASTEXITCODE): $alvo"
+          }
 
       - name: Diagnóstico (roda pelo código, com as mensagens na tela)
         if: failure()
