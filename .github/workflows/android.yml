@@ -1,0 +1,77 @@
+# Protótipo Android do 5K Video Downloader: compila os APKs de teste (debug) da pasta android/ do
+# repositório do código e testa num emulador. Não publica nada: os APKs ficam por 7 dias em
+# "Artifacts", na página da execução.
+#
+#   gh workflow run android.yml -R igorcnet/5K-Video-Downloader-downloads -f versao=main
+
+name: Android (protótipo)
+run-name: Android ${{ inputs.versao }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      versao:
+        description: Branch ou tag do código
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: igorcnet/5K-Video-Downloader
+          ref: ${{ inputs.versao }}
+          token: ${{ secrets.CODIGO_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.14.6'
+
+      - name: Compilar os APKs (debug)
+        run: |
+          gradle -p android assembleDebug --no-daemon
+          mkdir -p apks
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "android/app/build/outputs/apk/debug/app-$abi-debug.apk" "apks/5K-Video-Downloader-Android-$abi.apk"
+          done
+          ls -l apks
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: apks-android
+          path: apks/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Ligar a aceleração do emulador (KVM)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Testar no emulador (Android 14)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash android/testar-no-emulador.sh apks
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: telas-emulador
+          path: tela-*.png
+          if-no-files-found: ignore
+          retention-days: 7
