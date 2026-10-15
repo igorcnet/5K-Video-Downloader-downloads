@@ -26,5 +26,3 @@ O programa ainda não tem assinatura digital, então o Windows e o Mac mostram u
 
 Este repositório guarda só os instaladores, publicados automaticamente a cada versão. O programa leva o FFmpeg
 (GPL), o Deno (MIT) e outras bibliotecas; os avisos de licença ficam na pasta `licencas` dentro do programa.
-
-Use o programa apenas para baixar conteúdo que você tem o direito de baixar.
