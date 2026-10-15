@@ -35,7 +35,38 @@ env:
   CODIGO: igorcnet/5K-Video-Downloader
 
 jobs:
+  conferir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ env.CODIGO }}
+          ref: ${{ inputs.versao }}
+          token: ${{ secrets.CODIGO_TOKEN }}
+          persist-credentials: false
+      - name: Versão da tag igual à do programa
+        if: startsWith(inputs.versao, 'v')
+        env:
+          TAG: ${{ inputs.versao }}
+        # O aviso de atualização do programa compara a tag do Release com o APP_VERSION do motor.py
+        # (mesma conta do atualizacao.py): se forem diferentes, ele pediria para atualizar para sempre.
+        run: |
+          python3 - "$TAG" <<'FIM'
+          import re, sys
+          def versao(texto):
+              numeros = [int(n) for n in re.findall(r'\d+', texto)[:3]]
+              return tuple(numeros + [0] * (3 - len(numeros)))
+          tag = sys.argv[1]
+          programa = re.search(r"^APP_VERSION = '([^']+)'", open('motor.py', encoding='utf-8').read(), re.M)[1]
+          if versao(tag) != versao(programa):
+              print(f"::error::A tag {tag} não bate com APP_VERSION = '{programa}' no motor.py. "
+                    f"Mude o APP_VERSION, faça commit e crie a tag igual (ex.: v{programa}).")
+              sys.exit(1)
+          print(f'Tag {tag} = programa {programa}')
+          FIM
+
   windows:
+    needs: conferir
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -92,6 +123,7 @@ jobs:
           retention-days: 2
 
   macos:
+    needs: conferir
     strategy:
       fail-fast: false
       matrix:
