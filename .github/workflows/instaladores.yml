@@ -1,0 +1,205 @@
+# Gera os instaladores do 5K Video Downloader e publica as Releases deste repositório.
+#
+# Roda aqui, no repositório público, porque o GitHub Actions é gratuito em repositórios públicos
+# (no privado, cada minuto de Mac conta 10 vezes e o limite do mês acaba rápido). O código continua
+# no repositório privado igorcnet/5K-Video-Downloader: o workflow só o baixa durante o build, com o
+# secret CODIGO_TOKEN (token fine-grained com "Contents: Read-only" só no repositório do código).
+#
+# Normalmente quem dispara é o ./lancar-versao.sh do repositório do código, que cria a tag e chama:
+#   gh workflow run instaladores.yml -R igorcnet/5K-Video-Downloader-downloads -f versao=v2.1
+# Ele compila no Windows e no macOS, testa e publica a Release com nomes fixos, para links estáveis:
+#   .../releases/latest/download/5K-Video-Downloader-Windows.exe
+#   .../releases/latest/download/5K-Video-Downloader-macOS.dmg         (Mac M1 em diante)
+#   .../releases/latest/download/5K-Video-Downloader-macOS-Intel.dmg
+# Com publicar=false só compila e testa; os arquivos ficam por 2 dias em "Artifacts", na página da execução.
+
+name: Instaladores
+run-name: Instaladores ${{ inputs.versao }}${{ !inputs.publicar && ' (só teste)' || '' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      versao:
+        description: 'Tag do código a compilar (ex.: v2.1), ou main para só testar'
+        required: true
+        default: main
+      publicar:
+        description: Publicar a Release (só para tags v*)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CODIGO: igorcnet/5K-Video-Downloader
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ env.CODIGO }}
+          ref: ${{ inputs.versao }}
+          token: ${{ secrets.CODIGO_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Compilar (PyInstaller)
+        run: python empacotar.py
+
+      - name: Instalador (Inno Setup)
+        shell: pwsh
+        env:
+          VERSAO: ${{ inputs.versao }}
+        run: |
+          $versao = if ($env:VERSAO -like 'v*') { $env:VERSAO -replace '^v', '' } else { 'teste' }
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc /Q "/DVersao=$versao" instalador\windows.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-Item dist\5K-Video-Downloader-Windows.exe | Format-Table Name, Length
+
+      - name: Testar (instala e abre o programa)
+        shell: pwsh
+        run: |
+          Start-Process dist\5K-Video-Downloader-Windows.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          $pasta = "$env:LOCALAPPDATA\Programs\5K Video Downloader"
+          if (-not (Test-Path "$pasta\5K Video Downloader.exe")) { $pasta = "$env:ProgramFiles\5K Video Downloader" }
+          & "$pasta\_internal\bin\deno.exe" --version
+          $ffmpeg = Get-ChildItem "$pasta\_internal\imageio_ffmpeg\binaries" -Filter 'ffmpeg*.exe' | Select-Object -First 1
+          & $ffmpeg.FullName -hide_banner -version | Select-Object -First 1
+          Get-Content "$pasta\_internal\licencas\LEIA-ME.txt" -TotalCount 8
+          $app = Start-Process "$pasta\5K Video Downloader.exe" -PassThru
+          Start-Sleep 30
+          $app.Refresh()
+          $log = "$env:APPDATA\5K Video Downloader\registro.log"
+          if (Test-Path $log) { Get-Content $log }
+          "Janela: '$($app.MainWindowTitle)'"
+          if ($app.HasExited) { throw 'O programa fechou sozinho' }
+          if (-not (Select-String -Path $log -Pattern 'aberto .*JavaScript: deno' -Quiet)) { throw 'O programa não abriu direito' }
+          if (Select-String -Path $log -Pattern 'Traceback|erro interno' -Quiet) { throw 'Erro no registro' }
+          Stop-Process -Id $app.Id -Force
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: 5K-Video-Downloader-Windows.exe
+          path: dist/5K-Video-Downloader-Windows.exe
+          if-no-files-found: error
+          retention-days: 2
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest          # Apple Silicon (M1 em diante)
+            arquivo: 5K-Video-Downloader-macOS.dmg
+          - runner: macos-15-intel        # Intel (a GitHub mantém este runner até o fim de 2027)
+            arquivo: 5K-Video-Downloader-macOS-Intel.dmg
+    runs-on: ${{ matrix.runner }}
+    env:
+      APP: dist/5K Video Downloader.app
+      DMG: dist/${{ matrix.arquivo }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ env.CODIGO }}
+          ref: ${{ inputs.versao }}
+          token: ${{ secrets.CODIGO_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Compilar (PyInstaller)
+        run: python empacotar.py
+
+      - name: Assinatura ad-hoc e .dmg
+        run: |
+          uname -m
+          codesign --verify --deep --strict "$APP" || codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "macOS mínimo exigido pelos binários do pacote:"
+          find "$APP/Contents" -type f \( -perm -u+x -o -name '*.so' -o -name '*.dylib' \) -print0 \
+            | xargs -0 -n1 vtool -show-build 2>/dev/null | awk '/minos|version/ {print $2}' | sort -V | uniq -c || true
+          mkdir -p dmg
+          ditto "$APP" "dmg/5K Video Downloader.app"
+          ln -s /Applications dmg/Aplicativos
+          for tentativa in 1 2 3 4 5; do   # o hdiutil às vezes falha com "Resource busy" nos runners
+            hdiutil create -volname "5K Video Downloader" -srcfolder dmg -fs HFS+ -format UDZO -ov "$DMG" && break
+            sleep 10
+          done
+          ls -l "$DMG"
+
+      - name: Testar (abre o programa de dentro do .dmg)
+        run: |
+          hdiutil attach -nobrowse -mountpoint /tmp/5k "$DMG"
+          NO_DMG="/tmp/5k/5K Video Downloader.app"
+          "$(find "$NO_DMG" -type f -name deno | head -1)" --version
+          "$(find "$NO_DMG" -type f -name 'ffmpeg-*' | head -1)" -hide_banner -version | head -1
+          head -8 "$(find "$NO_DMG" -path '*licencas/LEIA-ME.txt' | head -1)"
+          "$NO_DMG/Contents/MacOS/5K Video Downloader" &
+          PID=$!
+          sleep 30
+          LOG="$HOME/Library/Application Support/5K Video Downloader/registro.log"
+          cat "$LOG" || true
+          kill -0 $PID || { echo "::error::O programa fechou sozinho"; exit 1; }
+          grep -q 'aberto .*JavaScript: deno' "$LOG" || { echo "::error::O programa não abriu direito"; exit 1; }
+          if grep -qE 'Traceback|erro interno' "$LOG"; then echo "::error::Erro no registro"; exit 1; fi
+          kill $PID
+          sleep 2
+          hdiutil detach /tmp/5k -force
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.arquivo }}
+          path: ${{ env.DMG }}
+          if-no-files-found: error
+          retention-days: 2
+
+  publicar:
+    if: inputs.publicar
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: pacotes
+          merge-multiple: true
+
+      - name: Publicar a Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.versao }}
+        run: |
+          if [[ "$TAG" != v* ]]; then
+            echo "::error::Só tags v* viram Release (recebi \"$TAG\"). Para testar sem publicar, use publicar=false."
+            exit 1
+          fi
+          ls -l pacotes
+          cat > notas.md <<'FIM'
+          Baixe o arquivo do seu computador:
+
+          - **Windows 10 ou 11 (64 bits)**: `5K-Video-Downloader-Windows.exe`
+          - **Mac com chip Apple (M1 em diante)**: `5K-Video-Downloader-macOS.dmg`
+          - **Mac com processador Intel**: `5K-Video-Downloader-macOS-Intel.dmg`
+
+          O programa ainda não tem assinatura digital, por isso o sistema avisa na primeira vez:
+
+          - **Windows**: na tela "O Windows protegeu o computador", clique em **Mais informações** e depois em **Executar assim mesmo**.
+          - **macOS**: arraste o 5K Video Downloader para Aplicativos e abra. Se o Mac disser que não pode abrir, vá em **Ajustes do Sistema → Privacidade e Segurança** e clique em **Abrir Mesmo Assim** (no macOS 14 ou anterior: botão direito no app → **Abrir**).
+          FIM
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" pacotes/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" pacotes/* --repo "$GITHUB_REPOSITORY" --target main --latest \
+              --title "5K Video Downloader ${TAG#v}" --notes-file notas.md
+          fi
+          echo "Links:"
+          for f in pacotes/*; do echo "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/$(basename "$f")"; done
