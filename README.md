@@ -1,16 +1,17 @@
 # 5K Video Downloader — downloads
 
-Instaladores do **5K Video Downloader** (Windows, Mac e Linux), programa para computador que baixa vídeos e músicas do YouTube,
+Instaladores do **5K Video Downloader** (Windows, Mac, Linux e Android), programa que baixa vídeos e músicas do YouTube,
 Instagram, TikTok e centenas de outros sites.
 
 | Sistema | Baixar |
 |---|---|
-| Windows 10 ou 11 (64 bits) | [5K-Video-Downloader-Windows.exe](https://github.com/igorcnet/5K-Video-Downloader-downloads/releases/latest/download/5K-Video-Downloader-Windows.exe) |
-| Mac com chip Apple (M1 em diante) | [5K-Video-Downloader-macOS.dmg](https://github.com/igorcnet/5K-Video-Downloader-downloads/releases/latest/download/5K-Video-Downloader-macOS.dmg) |
-| Mac com processador Intel | [5K-Video-Downloader-macOS-Intel.dmg](https://github.com/igorcnet/5K-Video-Downloader-downloads/releases/latest/download/5K-Video-Downloader-macOS-Intel.dmg) |
-| Linux (Ubuntu 22.04+, Linux Mint 21+, Debian 12+) | [5K-Video-Downloader-Linux.deb](https://github.com/igorcnet/5K-Video-Downloader-downloads/releases/latest/download/5K-Video-Downloader-Linux.deb) |
+| Windows 10 ou 11 (64 bits) | [5K-Video-Downloader-Windows.exe](https://github.com/5k-video-downloader/downloads/releases/latest/download/5K-Video-Downloader-Windows.exe) |
+| Mac com chip Apple (M1 em diante) | [5K-Video-Downloader-macOS.dmg](https://github.com/5k-video-downloader/downloads/releases/latest/download/5K-Video-Downloader-macOS.dmg) |
+| Mac com processador Intel | [5K-Video-Downloader-macOS-Intel.dmg](https://github.com/5k-video-downloader/downloads/releases/latest/download/5K-Video-Downloader-macOS-Intel.dmg) |
+| Linux (Ubuntu 22.04+, Linux Mint 21+, Debian 12+) | [5K-Video-Downloader-Linux.deb](https://github.com/5k-video-downloader/downloads/releases/latest/download/5K-Video-Downloader-Linux.deb) |
+| Celular Android (7.0 ou mais novo, 64 bits) | [5K-Video-Downloader-Android.apk](https://github.com/5k-video-downloader/downloads/releases/latest/download/5K-Video-Downloader-Android.apk) |
 
-Versões anteriores: [Releases](https://github.com/igorcnet/5K-Video-Downloader-downloads/releases).
+Versões anteriores: [Releases](https://github.com/5k-video-downloader/downloads/releases).
 
 ## Na primeira vez que abrir
 

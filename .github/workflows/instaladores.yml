@@ -6,7 +6,7 @@
 # secret CODIGO_TOKEN (token fine-grained com "Contents: Read-only" só no repositório do código).
 #
 # Normalmente quem dispara é o ./lancar-versao.sh do repositório do código, que cria a tag e chama:
-#   gh workflow run instaladores.yml -R igorcnet/5K-Video-Downloader-downloads -f versao=v2.1
+#   gh workflow run instaladores.yml -R 5k-video-downloader/downloads -f versao=v2.1
 # Ele compila no Windows, no macOS e no Linux, testa e publica a Release com nomes fixos (links estáveis):
 #   .../releases/latest/download/5K-Video-Downloader-Windows.exe
 #   .../releases/latest/download/5K-Video-Downloader-macOS.dmg         (Mac M1 em diante)

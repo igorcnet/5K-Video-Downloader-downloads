@@ -2,7 +2,7 @@
 # repositório do código e testa num emulador. Não publica nada: os APKs ficam por 7 dias em
 # "Artifacts", na página da execução.
 #
-#   gh workflow run android.yml -R igorcnet/5K-Video-Downloader-downloads -f versao=main
+#   gh workflow run android.yml -R 5k-video-downloader/downloads -f versao=main
 
 name: Android (protótipo)
 run-name: Android ${{ inputs.versao }}
